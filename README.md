@@ -33,8 +33,7 @@ A CPU-based 3D renderer that generates and rasterizes tube geometry from cubic B
 
 ```bash
 gcc -O3 -march=native -ffast-math -funroll-loops -flto \
--pthread main.c scene.c renderer.c geometry.c math.c -lm -o MTCPUR
-make
+-pthread main.c scene.c renderer.c geometry.c math.c -lm -o renderer
 ```
 ## CLI COMMANDS
 
@@ -85,6 +84,10 @@ If any of -p0 through -p3 are provided, all four must be specified.
 2.-ty <float> Translate Y
 3.-tz <float> Translate Z
 
+4.-mtx <float> Translate multiple x
+5.-mty <float> Translate multiple y
+6.-mtz <float> Translate multiple z
+7.-ts <float> Translate step
 ### Camera
 
 1.-cx <float> Camera X position
