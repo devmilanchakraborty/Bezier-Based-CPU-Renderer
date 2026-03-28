@@ -1,9 +1,7 @@
 #include <math.h>
 #include "../include/types.h"
 
-/* =========================
-   VECTOR OPS
-   ========================= */
+//vector ops
 
 float dot(Vec3 a, Vec3 b){
     return a.x*b.x + a.y*b.y + a.z*b.z;
@@ -28,9 +26,7 @@ Vec3 normalize(Vec3 v){
     return r;
 }
 
-/* =========================
-   MATRIX OPS
-   ========================= */
+//matrix ops
 
 Vec4 mat4_mul_vec4(Mat4 mat, Vec4 v){
     Vec4 r;
@@ -68,9 +64,7 @@ Mat4 mat_identity(){
     return m;
 }
 
-/* =========================
-   TRANSFORMS
-   ========================= */
+//transforms
 
 Mat4 mat_translate(float tx, float ty, float tz){
     Mat4 m = mat_identity();
@@ -174,9 +168,7 @@ Mat4 mat_look_at(Vec3 eye, Vec3 target, Vec3 up){
     return m;
 }
 
-/* =========================
-   FRUSTUM CULLING (MVP)
-   ========================= */
+//fustrum culling
 
 int aabb_in_frustum(AABB box, Mat4 mvp){
     Vec3 corners[8] = {
@@ -217,9 +209,6 @@ int aabb_in_frustum(AABB box, Mat4 mvp){
     return 0;
 }
 
-/* =========================
-   FRUSTUM (PLANE VERSION)
-   ========================= */
 
 int aabb_in_frustum_planes(AABB box, Plane planes[6]){
     for(int i = 0; i < 6; i++){
