@@ -4,6 +4,13 @@ A CPU-based 3D renderer that generates and rasterizes tube geometry from cubic B
 ## Renders Produced
 <img src="./Images/art.png" width="1000">
 <img src="./Images/helix5mil.png" width="1000">
+<img src="./Images/blue.png" width="1000">
+Command:
+
+```bash
+./renderer -t 5000000 -p0 -3,0,4 -p1 -4,3,12 -p2 5,12,-6 -p3 12,-4,12 -color 40,0,140 -cy 10 -cz 15 -scale 2 -sid 250 -seg 150 -lx 0 -ly 10 -lz 20 -o blue.ppm
+magick blue.ppm blue.png
+```
 ## Features
 
 - Bezier curve -> tube mesh generation  
