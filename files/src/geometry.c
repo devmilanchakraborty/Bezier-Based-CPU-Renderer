@@ -83,7 +83,7 @@ AABB bezier_bounds(BezierCubic b, float radius){
     }
 
     // padding
-    float padding = radius * 3.0f;
+    float padding = radius * 5.0f;
 
     box.min.x -= padding;
     box.min.y -= padding;

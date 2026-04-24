@@ -1,5 +1,6 @@
 #include <math.h>
 #include "../include/types.h"
+#include <stdio.h>
 
 //vector ops
 
@@ -213,17 +214,13 @@ int aabb_in_frustum(AABB box, Mat4 mvp){
 int aabb_in_frustum_planes(AABB box, Plane planes[6]){
     for(int i = 0; i < 6; i++){
         Plane p = planes[i];
-
         Vec3 v = {
-            (p.a > 0) ? box.max.x : box.min.x,
-            (p.b > 0) ? box.max.y : box.min.y,
-            (p.c > 0) ? box.max.z : box.min.z
+            (p.a > 0) ? box.min.x : box.max.x,
+            (p.b > 0) ? box.min.y : box.max.y,
+            (p.c > 0) ? box.min.z : box.max.z
         };
-
-        if(p.a*v.x + p.b*v.y + p.c*v.z + p.d < 0){
+        if(p.a*v.x + p.b*v.y + p.c*v.z + p.d < -0.1f)
             return 0;
-        }
     }
-
     return 1;
 }

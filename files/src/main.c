@@ -21,17 +21,17 @@ static void print_usage(const char *prog){
     printf("  -sid  <int>    sides per tube (default 12)\n");
     printf("  -r    <float>  tube radius (default 0.05)\n");
     printf("  -scale <float> scene scale (default 1.5)\n");
-    printf("  -p0   <int>    point on curve {x,y,z} (default -1.5, 15.0, 23.0)\n");
-    printf("  -p1   <int>    point on curve {x,y,z} (default -5.4,  2.5,  8.0)\n");
-    printf("  -p2   <int>    point on curve {x,y,z} (default -60.5, -1.5, 16.0)\n");
-    printf("  -p3   <int>    point on curve {x,y,z} (default 23.5, -24.0, 24.0\n");
+    printf("  -p0   <str>    point on curve {x,y,z} (default -1.5,15.0,23.0)\n");
+    printf("  -p1   <str>    point on curve {x,y,z} (default -5.4,2.5,8.0)\n");
+    printf("  -p2   <str>    point on curve {x,y,z} (default -60.5,-1.5,16.0)\n");
+    printf("  -p3   <str>    point on curve {x,y,z} (default 23.5,-24.0,24.0)\n");
     printf("  -rx   <float>  rotate x multiplier (default 0.0)\n");
     printf("  -ry   <float>  rotate y multiplier (default 1.0)\n");
     printf("  -rz   <float>  rotate z multiplier (default 1.0)\n");
     printf("  -rcx  <float>  rotate x constant (default 0.0)\n");
     printf("  -rcy  <float>  rotate y constant (default 1.0)\n");
     printf("  -rcz  <float>  rotate z constant (default 1.0)\n");
-    printf("  -as   <float>  angle step(for continued rotation) (default 0.001)\n");
+    printf("  -as   <float>  angle step (for continued rotation) (default 0.001)\n");
     printf("  -tx   <float>  translate x (default 0.0)\n");
     printf("  -ty   <float>  translate y (default 0.0)\n");
     printf("  -tz   <float>  translate z (default 0.0)\n");
@@ -46,15 +46,18 @@ static void print_usage(const char *prog){
     printf("  -ly   <float>  light y (default 5.0)\n");
     printf("  -lz   <float>  light z (default -40.0)\n");
     printf("  -fov  <float>  field of view degrees (default 90)\n");
+    printf("  -focus <x,y,z> camera look-at target (default 0,0,0)\n");
     printf("  -ow   <int>    pixel width of output (default 1920)\n");
     printf("  -oh   <int>    pixel height of output (default 1080)\n");
-    printf("  -rgb  <int>    enable rainbow coloring\n");
+    printf("  -iw   <int>    internal render width (default 3840)\n");
+    printf("  -ih   <int>    internal render height (default 2160)\n");
+    printf("  -rgb  <flag>   enable rainbow coloring\n");
     printf("  -color r,g,b   set solid color (0-255)\n");
     printf("  -o    <string> output file (default output.ppm)\n");
 }
 
 int main(int argc, char **argv){
-    // defaults
+    /* defaults */
     int   num_tubes    = 100000;
     int   segments     = 20;
     int   sides        = 12;
@@ -86,13 +89,15 @@ int main(int argc, char **argv){
     char  output[256]  = "output.ppm";
     int   out_w = OUT_WIDTH;
     int   out_h = OUT_HEIGHT;
-    int use_rgb = 0;
-    int use_custom_color = 0;
-    int custom_r = 255, custom_g = 255, custom_b = 255;
-    int custom_focus = 0; 
+    int   internal_w = 3840;
+    int   internal_h = 2160;
+    int   use_rgb = 0;
+    int   use_custom_color = 0;
+    int   custom_r = 255, custom_g = 255, custom_b = 255;
+    int   custom_focus = 0; 
     float focusx = 0.0f, focusy = 0.0f, focusz = 0.0f;
 
-    // parse args
+    /* parse args */
     for(int i = 1; i < argc; i++){
         if(!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")){
             print_usage(argv[0]); return 0;
@@ -109,9 +114,9 @@ int main(int argc, char **argv){
         else if(!strcmp(argv[i], "-rx")    && i+1<argc) rx         = atof(argv[++i]);
         else if(!strcmp(argv[i], "-ry")    && i+1<argc) ry         = atof(argv[++i]);
         else if(!strcmp(argv[i], "-rz")    && i+1<argc) rz         = atof(argv[++i]);
-        else if(!strcmp(argv[i], "-rcx")    && i+1<argc) rcx       = atof(argv[++i]);
-        else if(!strcmp(argv[i], "-rcy")    && i+1<argc) rcy       = atof(argv[++i]);
-        else if(!strcmp(argv[i], "-rcz")    && i+1<argc) rcz       = atof(argv[++i]);
+        else if(!strcmp(argv[i], "-rcx")   && i+1<argc) rcx        = atof(argv[++i]);
+        else if(!strcmp(argv[i], "-rcy")   && i+1<argc) rcy        = atof(argv[++i]);
+        else if(!strcmp(argv[i], "-rcz")   && i+1<argc) rcz        = atof(argv[++i]);
         else if(!strcmp(argv[i], "-as")    && i+1<argc) angle_step = atof(argv[++i]);
         else if(!strcmp(argv[i], "-tx")    && i+1<argc) tx         = atof(argv[++i]);
         else if(!strcmp(argv[i], "-ty")    && i+1<argc) ty         = atof(argv[++i]);
@@ -131,13 +136,18 @@ int main(int argc, char **argv){
         else if(!strcmp(argv[i], "-o")     && i+1<argc) strncpy(output, argv[++i], 255);
         else if(!strcmp(argv[i], "-ow") && i+1<argc) out_w         = atoi(argv[++i]);
         else if(!strcmp(argv[i], "-oh") && i+1<argc) out_h         = atoi(argv[++i]);
+        else if(!strcmp(argv[i], "-iw") && i+1<argc) internal_w    = atoi(argv[++i]);
+        else if(!strcmp(argv[i], "-ih") && i+1<argc) internal_h    = atoi(argv[++i]);
         else if(!strcmp(argv[i], "-rgb")){use_rgb                  = 1;}
         else if(!strcmp(argv[i], "-color") && i+1<argc){sscanf(argv[++i], "%d,%d,%d", &custom_r, &custom_g, &custom_b);use_custom_color = 1;}
         else { printf("unknown arg: %s\n", argv[i]); print_usage(argv[0]); return 1; }
     }
-    // clamp to max limits
+
+    /* clamp to sane limits */
     if(out_w <= 0) out_w = OUT_WIDTH;
     if(out_h <= 0) out_h = OUT_HEIGHT;
+    if(internal_w < 64) internal_w = 64;
+    if(internal_h < 64) internal_h = 64;
     if(custom_r < 0) custom_r = 0; if(custom_r > 255) custom_r = 255;
     if(custom_g < 0) custom_g = 0; if(custom_g > 255) custom_g = 255;
     if(custom_b < 0) custom_b = 0; if(custom_b > 255) custom_b = 255;
@@ -147,7 +157,8 @@ int main(int argc, char **argv){
     printf("tubes=%d seg=%d sid=%d scale=%.2f ry=%.2f rz=%.2f step=%.4f\n",
            num_tubes, segments, sides, scale, ry, rz, angle_step);
 
-    renderer_init();
+    /* initialise renderer with user-chosen internal resolution */
+    renderer_init(internal_w, internal_h);
 
     SceneConfig scene = {0};
 
@@ -157,30 +168,31 @@ int main(int argc, char **argv){
     scene.camera.up         = (Vec3){0.0f, 1.0f, 0.0f};
     scene.camera.fov        = fov_deg * 3.14159f / 180.0f;
     scene.camera.near_plane = 0.2f;
-    scene.camera.far_plane  = 500.0f;
+    scene.camera.far_plane  = 2000.0f;
 
     scene.light = (Vec3){lx, ly, lz};
 
     scene.transform.rotate_x   = rx;
     scene.transform.rotate_y   = ry;
     scene.transform.rotate_z   = rz;
+    scene.transform.rconst_x   = rcx;
+    scene.transform.rconst_y   = rcy;
+    scene.transform.rconst_z   = rcz;
     scene.transform.scale      = scale;
     scene.transform.translate_x = tx;
     scene.transform.translate_y = ty;
     scene.transform.translate_z = tz;
     scene.transform.angle_step = angle_step;
-    scene.transform.rconst_x = rcx;
-    scene.transform.rconst_y = rcy;
-    scene.transform.rconst_z = rcz;
+    scene.transform.multTranslatex = mtx;
+    scene.transform.multTranslatey = mty;
+    scene.transform.multTranslatez = mtz;
+    scene.transform.translate_step = translate_step;
 
-
-
-    TubeEntry *tubes = (TubeEntry *)malloc(num_tubes * sizeof(TubeEntry));
+    TubeEntry *tubes = (TubeEntry *)malloc((size_t)num_tubes * sizeof(TubeEntry));
 
     for(int i = 0; i < num_tubes; i++){
         BezierCubic curve;
 
-        // default
         curve = (BezierCubic){
             {-1.5f, 15.0f, 23.0f},
             {-5.4f,  2.5f,  8.0f},
@@ -188,10 +200,10 @@ int main(int argc, char **argv){
             {23.5f, -24.0f, 24.0f}
         };
 
-        // override if all provided
         if((p0_str || p1_str || p2_str || p3_str) &&
-        !(p0_str && p1_str && p2_str && p3_str)){
+           !(p0_str && p1_str && p2_str && p3_str)){
             printf("error: must provide all of -p0 -p1 -p2 -p3\n");
+            free(tubes);
             return 1;
         }
         if(p0_str && p1_str && p2_str && p3_str){
@@ -205,7 +217,7 @@ int main(int argc, char **argv){
         tubes[i].tube_props.segments = segments;
         tubes[i].tube_props.sides    = sides;
         tubes[i].tube_props.radius   = radius;
-        //color
+
         if(use_rgb){
             float phase = (float)i / (float)num_tubes * 2.0f * 3.14159f;
             tubes[i].color_r = (int)(127.5f * (1.0f + sinf(phase)));
@@ -227,7 +239,8 @@ int main(int argc, char **argv){
     scene.tubes      = tubes;
     scene.tube_count = num_tubes;
 
-    Mat4 light_proj  = mat_projection(3.14159f / 2.0f, (float)WIDTH/HEIGHT, 0.1f, 500.0f);
+    /* Light view-projection matrix */
+    Mat4 light_proj  = mat_projection(3.14159f / 2.0f, (float)internal_w / internal_h, 0.1f, 500.0f);
     Mat4 light_view  = mat_look_at(scene.light, (Vec3){0,0,0}, (Vec3){0,1,0});
     scene.light_vp   = matMult(light_proj, light_view);
 
@@ -237,10 +250,10 @@ int main(int argc, char **argv){
     shadow_map_init();
     render_scene(scene);
 
-    // output
-    Pixel (*fb)[WIDTH] = get_framebuffer();
+    /* output downsampling using get_framebuffer() */
+    Pixel *fb = get_framebuffer();
     FILE *f = fopen(output, "wb");
-    if(!f){ fprintf(stderr, "failed to open %s\n", output); return 1; }
+    if(!f){ fprintf(stderr, "failed to open %s\n", output); free(tubes); return 1; }
     fprintf(f, "P6\n%d %d\n255\n", out_w, out_h);
 
     for(int y = 0; y < out_h; y++){
@@ -250,27 +263,39 @@ int main(int argc, char **argv){
             float du = 0.5f / out_w;
             float dv = 0.5f / out_h;
 
-            int sx0 = (int)((u-du)*WIDTH);  if(sx0 < 0) sx0 = 0;
-            int sx1 = (int)((u+du)*WIDTH);  if(sx1 >= WIDTH)  sx1 = WIDTH-1;
-            int sy0 = (int)((v-dv)*HEIGHT); if(sy0 < 0) sy0 = 0;
-            int sy1 = (int)((v+dv)*HEIGHT); if(sy1 >= HEIGHT) sy1 = HEIGHT-1;
-            if(sx1 <= sx0) sx1 = sx0+1;
-            if(sy1 <= sy0) sy1 = sy0+1;
+            int sx0 = (int)((u-du)*render_width);
+            int sx1 = (int)((u+du)*render_width);
+            int sy0 = (int)((v-dv)*render_height);
+            int sy1 = (int)((v+dv)*render_height);
+            
+            if(sx0 < 0) sx0 = 0;
+            if(sx1 > render_width-1) sx1 = render_width-1;
+            if(sy0 < 0) sy0 = 0;
+            if(sy1 > render_height-1) sy1 = render_height-1;
+            if(sx0 > sx1) sx0 = sx1;
+            if(sy0 > sy1) sy0 = sy1;
 
             int r=0, g=0, b=0, count=0;
             for(int sy=sy0; sy<=sy1; sy++){
+                long long row_offset = (long long)sy * render_width;
                 for(int sx=sx0; sx<=sx1; sx++){
-                    r += fb[sy][sx].r;
-                    g += fb[sy][sx].g;
-                    b += fb[sy][sx].b;
+                    Pixel *p = &fb[row_offset + sx];
+                    r += p->r;
+                    g += p->g;
+                    b += p->b;
                     count++;
                 }
             }
-            unsigned char px[3] = {r/count, g/count, b/count};
+            unsigned char px[3];
+            px[0] = count ? r/count : 0;
+            px[1] = count ? g/count : 0;
+            px[2] = count ? b/count : 0;
             fwrite(px, 1, 3, f);
         }
     }
     fclose(f);
     free(tubes);
+    renderer_cleanup();    /* frees framebuffer and zbuffer */
+
     return 0;
 }

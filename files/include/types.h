@@ -7,18 +7,20 @@
 #define MAX_TUBE_SEGMENTS 150
 #define MAX_TUBE_SIDES 250
 #define MAX_TUBE_VERTS ((MAX_TUBE_SEGMENTS + 1) * MAX_TUBE_SIDES)
-#define WIDTH 3840
-#define HEIGHT 2160
+
+// Default internal rendering resolution – can be changed via CLI
+extern int render_width;
+extern int render_height;
+
 #define OUT_WIDTH 1920
 #define OUT_HEIGHT 1080
+
 #define SHADOW_W 1024
 #define SHADOW_H 1024
 #define NUM_THREADS 8
 #define FAR_DEPTH 1e30f
-static float global_cos_table[MAX_TUBE_SIDES];
-static float global_sin_table[MAX_TUBE_SIDES];
 
-
+// ... (the rest of the structs remain unchanged)
 typedef struct{
     float x, y, z;
 } Vec3;
@@ -58,6 +60,7 @@ typedef struct {
     Vec3 b;
     float radius;
 } Segment;
+
 typedef struct{
     Vec3 min;
     Vec3 max;
@@ -85,6 +88,7 @@ typedef struct {
     float near_plane;
     float far_plane;
 } CameraConfig;
+
 typedef struct {
     float rotate_x;
     float rotate_y;
@@ -102,6 +106,7 @@ typedef struct {
     float angle_step;
     float translate_step; 
 } TransformConfig;
+
 typedef struct {
     CameraConfig camera;
     TransformConfig transform;
@@ -114,10 +119,16 @@ typedef struct {
 typedef struct {
     float a, b, c, d;
 } Plane;
+
+// shadow_map is still static, but if you want it dynamic later, same pattern
 float shadow_map[SHADOW_H][SHADOW_W];
+
 typedef struct {
     float x, y, z; // already normalized to [0,1] for x,y
 } LightCoord;
+
+// ... (ThreadBuffers, RenderJob, ShadowJob unchanged)
+
 typedef struct {
     int   ring_x[MAX_TUBE_VERTS];
     int   ring_y[MAX_TUBE_VERTS];
@@ -127,6 +138,7 @@ typedef struct {
     int   ring_valid[MAX_TUBE_VERTS];
     int   ring_ring_valid[MAX_TUBE_SEGMENTS + 1];
 } ThreadBuffers;
+
 typedef struct {
     TubeEntry *tubes;
     Mat4 view;
@@ -141,6 +153,7 @@ typedef struct {
     float far_plane;
     ThreadBuffers tb;
 } RenderJob;
+
 typedef struct {
     TubeEntry *tubes;
     int start, end;
@@ -153,6 +166,5 @@ typedef struct {
     float rcx, rcy, rcz;
     float mtx, mty, mtz, translate_step;
 } ShadowJob;
-
 
 #endif

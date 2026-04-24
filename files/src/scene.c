@@ -14,6 +14,9 @@ static int shadowed_count = 0;
 static double render_start_ms = 0.0;
 static double shadow_start_ms = 0.0;
 
+extern int render_width;
+extern int render_height;
+
 static double timespec_to_ms(const struct timespec *t){
     return (double)t->tv_sec*1000.0 + (double)t->tv_nsec/1e6;
 }
@@ -26,8 +29,7 @@ static void *shadow_thread_func(void *arg){
 
     for(int i = job->start; i < job->end; i++){
         TubeEntry *te = &job->tubes[i];
-        if(!aabb_in_frustum_planes(te->bounds, job->planes)) continue;
-
+        
         float angle = i * job->angle_step;
         float ti = i * job->translate_step;
 
@@ -43,6 +45,8 @@ static void *shadow_thread_func(void *arg){
                 mat_scale(job->scale, job->scale, job->scale)));
 
         Mat4 light_mvp = matMult(job->light_vp, model);
+        if(!aabb_in_frustum(te->bounds, light_mvp))
+            continue;
         render_tube_shadow_local(te->world_curve, light_mvp,
                                  te->tube_props.segments,
                                  te->tube_props.sides,
@@ -69,7 +73,7 @@ static void *render_thread(void *arg){
         TubeEntry *te = &job->tubes[i];
         TubeProperties props = te->tube_props;
         BezierCubic world_curve = te->world_curve;
-
+        
         Vec3 mid = {
             (world_curve.p0.x+world_curve.p3.x)*0.5f,
             (world_curve.p0.y+world_curve.p3.y)*0.5f,
@@ -77,11 +81,13 @@ static void *render_thread(void *arg){
         };
         float dx=mid.x-job->eye.x, dy=mid.y-job->eye.y, dz=mid.z-job->eye.z;
         if(dx*dx+dy*dy+dz*dz > job->far_plane*job->far_plane) continue;
+        
 
-        if(!aabb_in_frustum_planes(te->bounds, job->planes)){
+        if(!aabb_in_frustum(te->bounds, job->vp)){
             __sync_fetch_and_add(&culled_count, 1);
             continue;
         }
+        
 
         render_tube(world_curve, job->vp, props.segments, props.sides, props.radius,
                     te->color_r, te->color_g, te->color_b,
@@ -169,14 +175,14 @@ void render_scene(SceneConfig scene){
     struct timespec t_total0, t_total1, t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t_total0);
 
-    Mat4 proj = mat_projection(scene.camera.fov, (float)WIDTH/HEIGHT,
-                               scene.camera.near_plane, scene.camera.far_plane);
+    Mat4 proj = mat_projection(scene.camera.fov, (float)render_width / render_height,
+                           scene.camera.near_plane, scene.camera.far_plane);
     Mat4 view = mat_look_at(scene.camera.eye, scene.camera.target, scene.camera.up);
     Mat4 vp   = matMult(proj, view);
 
     Plane planes[6], light_planes[6];
-    extract_frustum_planes(planes, vp);
-    extract_frustum_planes(light_planes, scene.light_vp);
+    extract_frustum_planes(planes, vp, scene.camera.eye);
+    extract_frustum_planes(light_planes, scene.light_vp, scene.light);
 
     // world transform + AABB cache
     clock_gettime(CLOCK_MONOTONIC, &t0);

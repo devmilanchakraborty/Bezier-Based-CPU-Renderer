@@ -6,27 +6,49 @@
 #include "../include/geometry.h"
 #include "../include/math.h"
 
-Pixel framebuffer[HEIGHT][WIDTH];
-float zbuffer[HEIGHT][WIDTH];
+Pixel *framebuffer = NULL;
+float *zbuffer = NULL;
+
+int render_width  = 3840;
+int render_height = 2160;
+
 float shadow_map[SHADOW_H][SHADOW_W];
 Mat4 light_vp_global;
+static float global_cos_table[MAX_TUBE_SIDES];
+static float global_sin_table[MAX_TUBE_SIDES];
 
+void renderer_init(int width, int height){
+    render_width  = width;
+    render_height = height;
 
+    free(framebuffer);
+    free(zbuffer);
 
-void renderer_init(){
+    framebuffer = malloc((size_t)height * width * sizeof(Pixel));
+    zbuffer     = malloc((size_t)height * width * sizeof(float));
+
+    if(!framebuffer || !zbuffer){
+        fprintf(stderr, "Failed to allocate framebuffer/zbuffer\n");
+        exit(1);
+    }
+
     for(int j = 0; j < MAX_TUBE_SIDES; j++){
         float a = (float)j / MAX_TUBE_SIDES * 2.0f * 3.14159f;
         global_cos_table[j] = cosf(a);
         global_sin_table[j] = sinf(a);
     }
-    for(int y = 0; y < HEIGHT; y++){
-        for(int x = 0; x < WIDTH; x++){
-            framebuffer[y][x].r = 0;
-            framebuffer[y][x].g = 0;
-            framebuffer[y][x].b = 0;
-            zbuffer[y][x] = FAR_DEPTH;
+
+    for(int y = 0; y < height; y++){
+        Pixel *row = framebuffer + y * width;
+        float *zrow = zbuffer + y * width;
+        for(int x = 0; x < width; x++){
+            row[x].r = 0;
+            row[x].g = 0;
+            row[x].b = 0;
+            zrow[x] = FAR_DEPTH;
         }
     }
+
     for(int y = 0; y < SHADOW_H; y++){
         for(int x = 0; x < SHADOW_W; x++){
             shadow_map[y][x] = FAR_DEPTH;
@@ -50,16 +72,17 @@ void shadow_map_write(int x, int y, float depth){
 }
 
 void draw_pixel(int x, int y, float depth, unsigned char r, unsigned char g, unsigned char b){
-    if(x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT){
-        if(depth < zbuffer[y][x]){
-            zbuffer[y][x] = depth;
-            framebuffer[y][x].r = r;
-            framebuffer[y][x].g = g;
-            framebuffer[y][x].b = b;
+    if(x >= 0 && x < render_width && y >= 0 && y < render_height){
+        float *zrow = zbuffer + y * render_width;
+        if(depth < zrow[x]){
+            zrow[x] = depth;
+            Pixel *row = framebuffer + y * render_width;
+            row[x].r = r;
+            row[x].g = g;
+            row[x].b = b;
         }
     }
 }
-
 
 void render_tube_shadow_local(
     BezierCubic curve,
@@ -103,11 +126,12 @@ void render_tube_shadow_local(
         }
     }
 }
+
 static inline int is_backface(int x0, int y0, int x1, int y1, int x2, int y2){
     return ((x1-x0)*(y2-y0) - (y1-y0)*(x2-x0)) <= 0;
 }
 
-Pixel (*get_framebuffer())[WIDTH]{
+Pixel *get_framebuffer(){
     return framebuffer;
 }
 
@@ -117,15 +141,12 @@ void drawTriangleGouraudShadow(
     int x2, int y2, float z2, float i2, LightCoord l2,
     int cr, int cg, int cb)
 {
-    // reject invalid
     if(!isfinite(z0)||!isfinite(z1)||!isfinite(z2)) return;
 
-    // AREA CULL
     int area = (x1-x0)*(y2-y0) - (y1-y0)*(x2-x0);
-    if(area <= 0) return;          // backface
-    if(area < 4 && area > -4) return;          // tiny triangle kill
+    if(area <= 0) return;
+    if(area < 4 && area > -4) return;
 
-    // sort by y
     if(y0>y1){ int tx=x0,ty=y0; float ti=i0,tz=z0; LightCoord tl=l0;
         x0=x1;y0=y1;i0=i1;z0=z1;l0=l1;x1=tx;y1=ty;i1=ti;z1=tz;l1=tl; }
     if(y0>y2){ int tx=x0,ty=y0; float ti=i0,tz=z0; LightCoord tl=l0;
@@ -139,7 +160,7 @@ void drawTriangleGouraudShadow(
     float inv_y02 = 1.0f / dy02;
 
     for(int y = y0; y <= y2; y++){
-        if(y < 0 || y >= HEIGHT) continue;
+        if(y < 0 || y >= render_height) continue;
 
         float t_long = (y - y0) * inv_y02;
 
@@ -160,12 +181,10 @@ void drawTriangleGouraudShadow(
         if(y < y1){
             int dy01 = y1 - y0;
             if(dy01 == 0) continue;
-
             float t = (y - y0) / (float)dy01;
             xb = x0 + (int)(t * (x1 - x0));
             ib = i0 + t*(i1 - i0);
             zb = z0 + t*(z1 - z0);
-
             lb = (LightCoord){
                 l0.x + t*(l1.x - l0.x),
                 l0.y + t*(l1.y - l0.y),
@@ -174,12 +193,10 @@ void drawTriangleGouraudShadow(
         } else {
             int dy12 = y2 - y1;
             if(dy12 == 0) continue;
-
             float t = (y - y1) / (float)dy12;
             xb = x1 + (int)(t * (x2 - x1));
             ib = i1 + t*(i2 - i1);
             zb = z1 + t*(z2 - z1);
-
             lb = (LightCoord){
                 l1.x + t*(l2.x - l1.x),
                 l1.y + t*(l2.y - l1.y),
@@ -194,26 +211,27 @@ void drawTriangleGouraudShadow(
             LightCoord tl = la; la = lb; lb = tl;
         }
 
-        if(xb < 0 || xa >= WIDTH) continue;
+        if(xb < 0 || xa >= render_width) continue;
         if(xa < 0) xa = 0;
-        if(xb >= WIDTH) xb = WIDTH - 1;
+        if(xb >= render_width) xb = render_width - 1;
 
         int dx = xb - xa;
         float inv_x = (dx != 0) ? 1.0f/dx : 0.0f;
+
+        float *zrow = zbuffer + y * render_width;
+        Pixel *row  = framebuffer + y * render_width;
 
         for(int x = xa; x <= xb; x++){
             float t = (dx != 0) ? (x - xa)*inv_x : 0.0f;
 
             float depth = za + t*(zb - za);
-            if(depth >= zbuffer[y][x]) continue;
+            if(depth >= zrow[x]) continue;
 
             float intensity = ia + t*(ib - ia);
             if(intensity <= 0.05f) continue;
 
-            // clamp once
             if(intensity > 1.0f) intensity = 1.0f;
 
-            // shadow only if worth it
             if(intensity > 0.35f){
                 LightCoord lc = {
                     la.x + t*(lb.x - la.x),
@@ -232,11 +250,10 @@ void drawTriangleGouraudShadow(
                 }
             }
 
-            zbuffer[y][x] = depth;
-
-            framebuffer[y][x].r = (unsigned char)(intensity * cr);
-            framebuffer[y][x].g = (unsigned char)(intensity * cg);
-            framebuffer[y][x].b = (unsigned char)(intensity * cb);
+            zrow[x] = depth;
+            row[x].r = (unsigned char)(intensity * cr);
+            row[x].g = (unsigned char)(intensity * cg);
+            row[x].b = (unsigned char)(intensity * cb);
         }
     }
 }
@@ -280,21 +297,22 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
                  float radius, int cr, int cg, int cb, Vec3 light,
                  ThreadBuffers *tb)
 {
-    
-    // LOD 
-    
     Vec3 mid = bezier_eval(b, 0.5f);
-    float dist2 = mid.x*mid.x + mid.y*mid.y + (mid.z+100.0f)*(mid.z+100.0f);
-    if(dist2 > 200.0f*200.0f){
-        return; // already culled anyway
+    float dist2 = mid.x*mid.x + mid.y*mid.y + (mid.z + 100.0f)*(mid.z + 100.0f);
+    if(dist2 > 2000.0f*2000.0f){
+        return;
     }
-    else if(dist2 > 120.0f*120.0f){
+    else if(dist2 > 800.0f*800.0f){
         segments = 3;
         sides = 3;
     }
-    else if(dist2 > 60.0f*60.0f){
+    else if(dist2 > 400.0f*400.0f){
         segments = 4;
         sides = 4;
+    }
+    else if(dist2 > 200.0f*200.0f){
+        segments = 6;
+        sides = 6;
     }
 
     if(segments < 2) segments = 2;
@@ -302,10 +320,8 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
     if(segments > MAX_TUBE_SEGMENTS) segments = MAX_TUBE_SEGMENTS;
     if(sides > MAX_TUBE_SIDES) sides = MAX_TUBE_SIDES;
 
-   
     int step = MAX_TUBE_SIDES / sides;
 
- 
     for(int i = 0; i <= segments; i++){
         tb->ring_ring_valid[i] = 0;
         int base = i * MAX_TUBE_SIDES;
@@ -315,20 +331,18 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
     }
 
     light = normalize(light);
-    //biuld rings
+
     for(int i = 0; i <= segments; i++){
         float t = (float)i / segments;
-
         Vec3 center = bezier_eval(b, t);
         Vec3 tangent = normalize(bezier_tangent(b, t));
 
-        // stable frame
         Vec3 up = {0,1,0};
         if(fabsf(dot(tangent, up)) > 0.99f)
             up = (Vec3){0,0,1};
 
         Vec3 right = normalize(cross(tangent, up));
-        Vec3 up2   = cross(right, tangent); // already orthogonal
+        Vec3 up2   = cross(right, tangent);
 
         int base = i * MAX_TUBE_SIDES;
         int valid_count = 0;
@@ -336,35 +350,30 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
         for(int j = 0; j < sides; j++){
             int idx = base + j;
 
-            // lookup tabble kinda buggy rn
             float ca = global_cos_table[j * step];
             float sa = global_sin_table[j * step];
 
-            // position
             Vec3 p = {
                 center.x + radius*(ca*right.x + sa*up2.x),
                 center.y + radius*(ca*right.y + sa*up2.y),
                 center.z + radius*(ca*right.z + sa*up2.z)
             };
 
-            // clip transform
             Vec4 clip = mat4_mul_vec4(mvp, (Vec4){p.x,p.y,p.z,1.0f});
             if(fabsf(clip.w) < 1e-6f) continue;
 
             float iw = 1.0f / clip.w;
 
-            tb->ring_x[idx] = (int)((clip.x*iw + 1.0f) * 0.5f * WIDTH);
-            tb->ring_y[idx] = (int)((1.0f - clip.y*iw) * 0.5f * HEIGHT);
+            tb->ring_x[idx] = (int)((clip.x*iw + 1.0f) * 0.5f * render_width);
+            tb->ring_y[idx] = (int)((1.0f - clip.y*iw) * 0.5f * render_height);
             tb->ring_z[idx] = clip.z * iw;
 
-            // normals
             tb->ring_n[idx] = (Vec3){
                 ca*right.x + sa*up2.x,
                 ca*right.y + sa*up2.y,
                 ca*right.z + sa*up2.z
             };
 
-            // shadow coord
             Vec4 lc = mat4_mul_vec4(light_vp_global, (Vec4){p.x,p.y,p.z,1.0f});
             if(fabsf(lc.w) > 1e-6f){
                 float ilw = 1.0f / lc.w;
@@ -383,7 +392,6 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
             tb->ring_ring_valid[i] = 1;
     }
 
-    // triangle pass
     for(int i = 0; i < segments; i++){
         if(!tb->ring_ring_valid[i] || !tb->ring_ring_valid[i+1]) continue;
 
@@ -399,7 +407,6 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
             int d = b1 + next;
 
             float amb = 0.2f;
-
             float ia = amb + (1.0f-amb)*fmaxf(0, dot(tb->ring_n[a], light));
             float ib = amb + (1.0f-amb)*fmaxf(0, dot(tb->ring_n[b], light));
             float ic = amb + (1.0f-amb)*fmaxf(0, dot(tb->ring_n[c], light));
@@ -428,16 +435,60 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
     }
 }
 
-void extract_frustum_planes(Plane planes[6], Mat4 m){
-    planes[0]=(Plane){m.m[0][3]+m.m[0][0],m.m[1][3]+m.m[1][0],m.m[2][3]+m.m[2][0],m.m[3][3]+m.m[3][0]};
-    planes[1]=(Plane){m.m[0][3]-m.m[0][0],m.m[1][3]-m.m[1][0],m.m[2][3]-m.m[2][0],m.m[3][3]-m.m[3][0]};
-    planes[2]=(Plane){m.m[0][3]+m.m[0][1],m.m[1][3]+m.m[1][1],m.m[2][3]+m.m[2][1],m.m[3][3]+m.m[3][1]};
-    planes[3]=(Plane){m.m[0][3]-m.m[0][1],m.m[1][3]-m.m[1][1],m.m[2][3]-m.m[2][1],m.m[3][3]-m.m[3][1]};
-    planes[4]=(Plane){m.m[0][3]+m.m[0][2],m.m[1][3]+m.m[1][2],m.m[2][3]+m.m[2][2],m.m[3][3]+m.m[3][2]};
-    planes[5]=(Plane){m.m[0][3]-m.m[0][2],m.m[1][3]-m.m[1][2],m.m[2][3]-m.m[2][2],m.m[3][3]-m.m[3][2]};
+void extract_frustum_planes(Plane planes[6], Mat4 m, Vec3 refPos){
+    // Left: row3 + row0
+    planes[0].a = m.m[3][0] + m.m[0][0];
+    planes[0].b = m.m[3][1] + m.m[0][1];
+    planes[0].c = m.m[3][2] + m.m[0][2];
+    planes[0].d = m.m[3][3] + m.m[0][3];
+    // Right: row3 - row0
+    planes[1].a = m.m[3][0] - m.m[0][0];
+    planes[1].b = m.m[3][1] - m.m[0][1];
+    planes[1].c = m.m[3][2] - m.m[0][2];
+    planes[1].d = m.m[3][3] - m.m[0][3];
+    // Bottom: row3 + row1
+    planes[2].a = m.m[3][0] + m.m[1][0];
+    planes[2].b = m.m[3][1] + m.m[1][1];
+    planes[2].c = m.m[3][2] + m.m[1][2];
+    planes[2].d = m.m[3][3] + m.m[1][3];
+    // Top: row3 - row1
+    planes[3].a = m.m[3][0] - m.m[1][0];
+    planes[3].b = m.m[3][1] - m.m[1][1];
+    planes[3].c = m.m[3][2] - m.m[1][2];
+    planes[3].d = m.m[3][3] - m.m[1][3];
+    // Near: row2 (for 0-to-1 depth)
+    planes[4].a = m.m[2][0];
+    planes[4].b = m.m[2][1];
+    planes[4].c = m.m[2][2];
+    planes[4].d = m.m[2][3];
+    // Far: row3 - row2
+    planes[5].a = m.m[3][0] - m.m[2][0];
+    planes[5].b = m.m[3][1] - m.m[2][1];
+    planes[5].c = m.m[3][2] - m.m[2][2];
+    planes[5].d = m.m[3][3] - m.m[2][3];
 
     for(int i=0;i<6;i++){
-        float len=sqrtf(planes[i].a*planes[i].a+planes[i].b*planes[i].b+planes[i].c*planes[i].c);
-        planes[i].a/=len; planes[i].b/=len; planes[i].c/=len; planes[i].d/=len;
+        float len = sqrtf(planes[i].a*planes[i].a + planes[i].b*planes[i].b + planes[i].c*planes[i].c);
+        if(len > 0.0001f){
+            planes[i].a /= len;
+            planes[i].b /= len;
+            planes[i].c /= len;
+            planes[i].d /= len;
+        }
+        // Ensure the reference point (camera/light) is inside the frustum
+        float d = planes[i].a*refPos.x + planes[i].b*refPos.y + planes[i].c*refPos.z + planes[i].d;
+        if(d < 0.0f){
+            planes[i].a = -planes[i].a;
+            planes[i].b = -planes[i].b;
+            planes[i].c = -planes[i].c;
+            planes[i].d = -planes[i].d;
+        }
     }
+}
+
+void renderer_cleanup(void) {
+    free(framebuffer);
+    free(zbuffer);
+    framebuffer = NULL;
+    zbuffer = NULL;
 }
