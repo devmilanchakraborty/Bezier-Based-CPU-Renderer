@@ -68,7 +68,7 @@ AABB bezier_bounds(BezierCubic b, float radius){
     Vec3 p = bezier_eval(b, 0.0f);
     box.min = box.max = p;
 
-    // more samples (was 10 → now 20)
+    
     for(int i = 1; i <= 20; i++){
         float t = i / 20.0f;
         Vec3 p = bezier_eval(b, t);
