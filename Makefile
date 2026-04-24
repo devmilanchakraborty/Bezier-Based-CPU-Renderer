@@ -1,27 +1,35 @@
-CC = gcc
-TARGET = renderer
+CC      := gcc
+TARGET  := renderer
 
-# Optimization flags
-CFLAGS = -O3 -march=native -ffast-math -funroll-loops -flto -pthread
-# Tell the compiler where the headers are
-CFLAGS += -I./files/include -I./files/src
+# 1. Standardize Flags
+# Added -Wall and -Wextra because high-level C devs expect to see them.
+# Added -I./files/include to ensure headers are found.
+CFLAGS  := -O3 -march=native -ffast-math -funroll-loops -flto -pthread \
+           -Wall -Wextra -I./files/include -I./files/src
 
-LDFLAGS = -pthread -flto -lm
+# 2. Linker Flags
+LDFLAGS := -pthread -flto -lm
 
-# VPATH tells Make where to search for source files (.c files)
-VPATH = files/src
+# 3. Path Management
+VPATH   := files/src
 
-# Just the filenames, VPATH will find them in files/src
-SRC = main.c scene.c renderer.c geometry.c math.c
-OBJ = $(SRC:.c=.o)
+# 4. Source & Object Setup
+SRC     := main.c scene.c renderer.c geometry.c math_utils.c
+OBJ     := $(SRC:.c=.o)
 
+# Default rule
 all: $(TARGET)
 
+# Linking step
 $(TARGET): $(OBJ)
 	$(CC) $(OBJ) -o $(TARGET) $(LDFLAGS)
 
+# Compilation step
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
+
+# 5. The "Professional" Cleanup
+.PHONY: all clean
 
 clean:
 	rm -f *.o $(TARGET)
