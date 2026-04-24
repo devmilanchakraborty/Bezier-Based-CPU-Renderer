@@ -4,7 +4,7 @@
 #include <string.h>
 #include "../include/types.h"
 #include "../include/geometry.h"
-#include "../include/math.h"
+#include "../include/math_utils.h"
 
 Pixel *framebuffer = NULL;
 float *zbuffer = NULL;

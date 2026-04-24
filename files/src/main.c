@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../include/types.h"
-#include "../include/math.h"
+#include "../include/math_utils.h"
 #include "../include/geometry.h"
 #include "../include/renderer.h"
 #include "../include/scene.h"
@@ -41,7 +41,7 @@ static void print_usage(const char *prog){
     printf("  -mtx  <float>  translate x multiplier per tube (default 0.0)\n");
     printf("  -mty  <float>  translate y multiplier per tube (default 0.0)\n");
     printf("  -mtz  <float>  translate z multiplier per tube (default 0.0)\n");
-    printf("  -ts   <float>  translate step per tube index (default 0.0)\n");   
+    printf("  -ts   <float>  translate step per tube index (default 0.0)\n");
     printf("  -cx   <float>  camera x (default 0.0)\n");
     printf("  -cy   <float>  camera y (default 0.0)\n");
     printf("  -cz   <float>  camera z (default -200.0)\n");
@@ -101,11 +101,11 @@ int main(int argc, char **argv){
     int   use_rgb = 0;
     int   use_custom_color = 0;
     int   custom_r = 255, custom_g = 255, custom_b = 255;
-    int   custom_focus = 0; 
+    int   custom_focus = 0;
     float focusx = 0.0f, focusy = 0.0f, focusz = 0.0f;
-    int   use_png = 0;  
-    int use_aces = 0; 
-    float rainbow_cycles = 1.0f;   
+    int   use_png = 0;
+    int use_aces = 0;
+    float rainbow_cycles = 1.0f;
 
     /* parse args */
     for(int i = 1; i < argc; i++){

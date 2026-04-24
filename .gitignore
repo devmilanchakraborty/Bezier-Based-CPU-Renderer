@@ -1,4 +1,7 @@
 .DS_Store
+*.o
+compile_commands.json
+.cache/
 # Build output
 renderer
 

@@ -4,7 +4,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../include/math.h"
+#include "../include/math_utils.h"
 #include "../include/geometry.h"
 #include "../include/renderer.h"
 
