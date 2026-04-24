@@ -251,6 +251,20 @@ clang -O3 -march=native -ffast-math -flto \
     -pthread main.c scene.c renderer.c geometry.c math.c -lm -o renderer
 ```
 
+The project includes a Makefile to handle incremental builds and standardized optimization flags.
+
+```bash
+# Build the project
+make
+
+# Clean build artifacts
+make clean
+
+# Optional: Generate LSP database for IDE support (requires 'bear')
+bear -- make
+```
+
+
 **Compile Flags Explained:**
 
   * `-O3`: Maximum optimisation.
