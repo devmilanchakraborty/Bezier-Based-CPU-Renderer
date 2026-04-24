@@ -14,6 +14,8 @@ static int shadowed_count = 0;
 static double render_start_ms = 0.0;
 static double shadow_start_ms = 0.0;
 
+int num_threads = 8;
+
 extern int render_width;
 extern int render_height;
 
@@ -114,14 +116,20 @@ static void shadow_pass(SceneConfig *scene, Plane light_planes[6]){
     shadow_start_ms = timespec_to_ms(&now);
     shadowed_count = 0;
 
-    pthread_t threads[NUM_THREADS];
-    ShadowJob jobs[NUM_THREADS];
-    int per = scene->tube_count / NUM_THREADS;
+    pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
+    ShadowJob *jobs = malloc(num_threads * sizeof(ShadowJob));
+    if(!threads || !jobs){
+        fprintf(stderr, "shadow_pass: malloc failed\n");
+        free(threads); free(jobs);
+        return;
+    }
 
-    for(int t=0; t<NUM_THREADS; t++){
+    int per = scene->tube_count / num_threads;
+
+    for(int t=0; t<num_threads; t++){
         jobs[t].tubes      = scene->tubes;
         jobs[t].start      = t*per;
-        jobs[t].end        = (t==NUM_THREADS-1) ? scene->tube_count : (t+1)*per;
+        jobs[t].end        = (t==num_threads-1) ? scene->tube_count : (t+1)*per;
         jobs[t].light_vp   = scene->light_vp;
         jobs[t].tube_count = scene->tube_count;
         jobs[t].rx         = scene->transform.rotate_x;
@@ -138,18 +146,21 @@ static void shadow_pass(SceneConfig *scene, Plane light_planes[6]){
         jobs[t].translate_step = scene->transform.translate_step;
         memcpy(jobs[t].planes, light_planes, sizeof(Plane)*6);
 
-        jobs[t].shadow_local = malloc(shadow_h * shadow_w * sizeof(float));
+        jobs[t].shadow_local = malloc((size_t)shadow_h * shadow_w * sizeof(float));
         if(!jobs[t].shadow_local){
             fprintf(stderr, "shadow malloc failed thread %d\n", t);
+            // free previously allocated shadow_local buffers
+            for(int k=0; k<t; k++) free(jobs[k].shadow_local);
+            free(threads); free(jobs);
             return;
         }
-        int total = shadow_h*shadow_w;
+        int total = shadow_h * shadow_w;
         for(int i=0; i<total; i++) jobs[t].shadow_local[i] = FAR_DEPTH;
 
         pthread_create(&threads[t], NULL, shadow_thread_func, &jobs[t]);
     }
 
-    for(int t=0; t<NUM_THREADS; t++)
+    for(int t=0; t<num_threads; t++)
         pthread_join(threads[t], NULL);
 
     // merge into global shadow_map
@@ -157,15 +168,18 @@ static void shadow_pass(SceneConfig *scene, Plane light_planes[6]){
         for(int x=0; x<shadow_w; x++){
             float min = FAR_DEPTH;
             int idx = y*shadow_w+x;
-            for(int t=0; t<NUM_THREADS; t++)
+            for(int t=0; t<num_threads; t++)
                 if(jobs[t].shadow_local[idx] < min)
                     min = jobs[t].shadow_local[idx];
             shadow_map[y * shadow_w + x] = min;
         }
     }
 
-    for(int t=0; t<NUM_THREADS; t++)
+    for(int t=0; t<num_threads; t++)
         free(jobs[t].shadow_local);
+
+    free(jobs);
+    free(threads);
 
     clock_gettime(CLOCK_MONOTONIC, &now);
     printf("shadow pass: %.2f ms\n", timespec_to_ms(&now) - shadow_start_ms);
@@ -189,7 +203,7 @@ void render_scene(SceneConfig scene){
     for(int i=0; i<scene.tube_count; i++){
        TubeEntry *te = &scene.tubes[i];
     float angle = i * scene.transform.angle_step;
-    float ti = i * scene.transform.translate_step;  // add this
+    float ti = i * scene.transform.translate_step;
 
     Mat4 model = matMult(
         mat_translate(
@@ -224,14 +238,20 @@ void render_scene(SceneConfig scene){
     printf("shadow pass total: %.2f ms\n", timespec_to_ms(&t1)-timespec_to_ms(&t0));
 
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    RenderJob *jobs=(RenderJob *)malloc(NUM_THREADS*sizeof(RenderJob));
-    pthread_t threads[NUM_THREADS];
-    int per=scene.tube_count/NUM_THREADS;
+    RenderJob *jobs = malloc(num_threads * sizeof(RenderJob));
+    pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
+    if(!jobs || !threads){
+        fprintf(stderr, "render_scene: malloc failed\n");
+        free(jobs); free(threads);
+        return;
+    }
 
-    for(int t=0; t<NUM_THREADS; t++){
+    int per = scene.tube_count / num_threads;
+
+    for(int t=0; t<num_threads; t++){
         jobs[t].tubes       = scene.tubes;
         jobs[t].start       = t*per;
-        jobs[t].end         = (t==NUM_THREADS-1) ? scene.tube_count : (t+1)*per;
+        jobs[t].end         = (t==num_threads-1) ? scene.tube_count : (t+1)*per;
         jobs[t].vp          = vp;
         jobs[t].light       = scene.light;
         jobs[t].tubes_total = scene.tube_count;
@@ -245,12 +265,13 @@ void render_scene(SceneConfig scene){
     clock_gettime(CLOCK_MONOTONIC, &now);
     render_start_ms = timespec_to_ms(&now);
 
-    for(int t=0; t<NUM_THREADS; t++)
+    for(int t=0; t<num_threads; t++)
         pthread_create(&threads[t], NULL, render_thread, &jobs[t]);
-    for(int t=0; t<NUM_THREADS; t++)
+    for(int t=0; t<num_threads; t++)
         pthread_join(threads[t], NULL);
 
     free(jobs);
+    free(threads);
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
     printf("main render: %.2f ms\n", timespec_to_ms(&t1)-timespec_to_ms(&t0));

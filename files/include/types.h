@@ -8,7 +8,7 @@
 #define MAX_TUBE_SIDES 250
 #define MAX_TUBE_VERTS ((MAX_TUBE_SEGMENTS + 1) * MAX_TUBE_SIDES)
 
-// Default internal rendering resolution – can be changed via CLI
+
 extern int render_width;
 extern int render_height;
 extern int shadow_w;
@@ -16,13 +16,10 @@ extern int shadow_h;
 
 #define OUT_WIDTH 1920
 #define OUT_HEIGHT 1080
-
-//#define SHADOW_W 1024
-//#define SHADOW_H 1024
-#define NUM_THREADS 8
 #define FAR_DEPTH 1e30f
 
-// ... (the rest of the structs remain unchanged)
+extern int num_threads;
+
 typedef struct{
     float x, y, z;
 } Vec3;

@@ -19,6 +19,16 @@ extern float *zbuffer;   // so we can read depth for fog
 static int   use_bg = 0;
 static int   bg_r = 0, bg_g = 0, bg_b = 0;
 
+static int   use_dof = 0;
+static float focal_depth = 0.5f; 
+static float aperture = 8.0f;         
+static float max_blur_radius = 6.0f;  
+
+//bloom
+static int   use_bloom = 0;
+static float bloom_threshold = 0.7f;   // brightness level to start glowing (0‑1)
+static float bloom_intensity = 0.4f;   // how strong the glow is
+
 // Fog
 static int   use_fog = 0;
 static float fog_density = 0.15f;        // 0.05 = subtle, 0.3 = very hazy
@@ -32,6 +42,80 @@ static Vec3 parse_vec3(const char *str){
     Vec3 v = {0};
     sscanf(str, "%f,%f,%f", &v.x, &v.y, &v.z);
     return v;
+}
+
+static Pixel sample_bilinear(const Pixel *buf, int bw, int bh, float u, float v) {
+    float fx = u * bw;
+    float fy = v * bh;
+    int ix = (int)fx, iy = (int)fy;
+    float sx = fx - ix, sy = fy - iy;
+    int x0 = ix, x1 = ix + 1; if (x1 >= bw) x1 = bw - 1;
+    int y0 = iy, y1 = iy + 1; if (y1 >= bh) y1 = bh - 1;
+    Pixel p00 = buf[y0 * bw + x0];
+    Pixel p10 = buf[y0 * bw + x1];
+    Pixel p01 = buf[y1 * bw + x0];
+    Pixel p11 = buf[y1 * bw + x1];
+    Pixel res;
+    res.r = (unsigned char)((1-sx)*(1-sy)*p00.r + sx*(1-sy)*p10.r + (1-sx)*sy*p01.r + sx*sy*p11.r + 0.5f);
+    res.g = (unsigned char)((1-sx)*(1-sy)*p00.g + sx*(1-sy)*p10.g + (1-sx)*sy*p01.g + sx*sy*p11.g + 0.5f);
+    res.b = (unsigned char)((1-sx)*(1-sy)*p00.b + sx*(1-sy)*p10.b + (1-sx)*sy*p01.b + sx*sy*p11.b + 0.5f);
+    return res;
+}
+
+
+
+
+static void gauss_blur(Pixel *dst, const Pixel *src, int w, int h, int radius, float sigma) {
+    // 1D kernel
+    int ksize = 2 * radius + 1;
+    float *kernel = malloc(ksize * sizeof(float));
+    float sum = 0;
+    for (int i = -radius; i <= radius; i++) {
+        float val = expf(-(i * i) / (2.0f * sigma * sigma));
+        kernel[i + radius] = val;
+        sum += val;
+    }
+    for (int i = 0; i < ksize; i++) kernel[i] /= sum;
+
+    // Temporary buffer for horizontal pass
+    Pixel *temp = malloc((size_t)w * h * sizeof(Pixel));
+
+    // Horizontal pass
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            float r = 0, g = 0, b = 0;
+            for (int k = -radius; k <= radius; k++) {
+                int sx = x + k;
+                if (sx < 0) sx = 0; else if (sx >= w) sx = w - 1;
+                Pixel sp = src[y * w + sx];
+                float weight = kernel[k + radius];
+                r += sp.r * weight; g += sp.g * weight; b += sp.b * weight;
+            }
+            temp[y * w + x].r = (unsigned char)(r + 0.5f);
+            temp[y * w + x].g = (unsigned char)(g + 0.5f);
+            temp[y * w + x].b = (unsigned char)(b + 0.5f);
+        }
+    }
+
+    // Vertical pass
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            float r = 0, g = 0, b = 0;
+            for (int k = -radius; k <= radius; k++) {
+                int sy = y + k;
+                if (sy < 0) sy = 0; else if (sy >= h) sy = h - 1;
+                Pixel sp = temp[sy * w + x];
+                float weight = kernel[k + radius];
+                r += sp.r * weight; g += sp.g * weight; b += sp.b * weight;
+            }
+            dst[y * w + x].r = (unsigned char)(r + 0.5f);
+            dst[y * w + x].g = (unsigned char)(g + 0.5f);
+            dst[y * w + x].b = (unsigned char)(b + 0.5f);
+        }
+    }
+
+    free(kernel);
+    free(temp);
 }
 
 static void print_usage(const char *prog){
@@ -73,17 +157,23 @@ static void print_usage(const char *prog){
     printf("  -ih   <int>    internal render height (default 2160)\n");
     printf("  -sw   <int>    shadow map width (default 1024)\n");
     printf("  -sh   <int>    shadow map height (default 1024)\n");
+    printf("  -threads <int>   number of rendering threads (default 8)\n");
     printf("  -rgb  <flag>   enable rainbow coloring\n");
     printf("  -cycles <float> rainbow cycles across all tubes (use with -rgb)(default 1.0)\n");
     printf("  -color r,g,b   set solid color (0-255)\n");
     printf("  -png  <flag>   output as PNG instead of PPM\n");
     printf("  -aces <flag>   apply ACES filmic tone mapping\n");
     printf("  -bg    <r,g,b> background color for untouched pixels\n");
-    printf("  -fog           enable exponential depth cue\n");
     printf("  -fog           enable exponential depth fog\n");
     printf("  -fogdensity <float> fog density (default 0.15, range 0.01–1.0)\n");
     printf("  -fogcolor <r,g,b>   fog colour (default 180,200,255)\n");
     printf("  -vignette [str]  enable vignette with optional strength (default 0.4)\n");
+    printf("  -dof           enable depth of field\n");
+    printf("  -focal <float> focal depth in NDC (default 0.5)\n");
+    printf("  -aperture <float> blur amount (default 8.0)\n");
+    printf("  -bloom          enable bloom (glow)\n");
+    printf("  -bloomthreshold <float> brightness threshold (default 0.7)\n");
+    printf("  -bloomintensity <float> glow strength (default 0.4)\n");
     printf("  -o    <string> output file (default output.ppm)\n");
 
 }
@@ -131,6 +221,7 @@ int main(int argc, char **argv){
     int   use_png = 0;
     int use_aces = 0;
     float rainbow_cycles = 1.0f;
+    int num_threads_arg = 8;
 
     /* parse args */
     for(int i = 1; i < argc; i++){
@@ -181,11 +272,17 @@ int main(int argc, char **argv){
         else if(!strcmp(argv[i], "-aces")) { use_aces = 1; }
         else if(!strcmp(argv[i], "-cycles") && i+1<argc) rainbow_cycles = atof(argv[++i]);
         else if(!strcmp(argv[i], "-bg") && i+1<argc){ sscanf(argv[++i], "%d,%d,%d", &bg_r, &bg_g, &bg_b); use_bg = 1;}
-        else if(!strcmp(argv[i], "-fogcolor") && i+1<argc){ sscanf(argv[++i], "%d,%d,%d", &fog_r, &fog_g, &fog_b); use_fog = 1; }
         else if(!strcmp(argv[i], "-fog")) { use_fog = 1; }
         else if(!strcmp(argv[i], "-fogdensity") && i+1<argc) fog_density = atof(argv[++i]);
         else if(!strcmp(argv[i], "-fogcolor") && i+1<argc) {sscanf(argv[++i], "%d,%d,%d", &fog_r, &fog_g, &fog_b);use_fog = 1;}
         else if(!strcmp(argv[i], "-vignette")){ use_vignette = 1;if(i+1<argc && argv[i+1][0]!='-') vignette_strength = atof(argv[++i]);}
+        else if(!strcmp(argv[i], "-dof")) { use_dof = 1; }
+        else if(!strcmp(argv[i], "-focal") && i+1<argc) focal_depth = atof(argv[++i]);
+        else if(!strcmp(argv[i], "-aperture") && i+1<argc) aperture = atof(argv[++i]);
+        else if(!strcmp(argv[i], "-bloom")) { use_bloom = 1; }
+        else if(!strcmp(argv[i], "-bloomthreshold") && i+1<argc) bloom_threshold = atof(argv[++i]);
+        else if(!strcmp(argv[i], "-bloomintensity") && i+1<argc) bloom_intensity = atof(argv[++i]);
+        else if(!strcmp(argv[i], "-threads") && i+1<argc) num_threads_arg = atoi(argv[++i]);
         else { printf("unknown arg: %s\n", argv[i]); print_usage(argv[0]); return 1; }
     }
 
@@ -320,6 +417,9 @@ int main(int argc, char **argv){
     light_vp_global  = scene.light_vp;
 
     shadow_init(shadow_w_arg, shadow_h_arg);
+    extern int num_threads;
+    num_threads = num_threads_arg;
+    if (num_threads < 1) num_threads = 1; 
     render_scene(scene);
 
     /* output downsampling using get_framebuffer() */
@@ -402,6 +502,176 @@ int main(int argc, char **argv){
                 row[x].b = (unsigned char)(row[x].b * factor);
             }
         }
+    }
+    if(use_dof) {
+        int w = render_width, h = render_height;
+        int hw = w / 2, hh = h / 2;
+        int qw = w / 4, qh = h / 4;
+
+        // Allocate temporary buffers for pyramid levels
+        Pixel *level1 = malloc((size_t)hw * hh * sizeof(Pixel));
+        Pixel *level2 = malloc((size_t)qw * qh * sizeof(Pixel));
+        if (!level1 || !level2) {
+            fprintf(stderr, "DOF pyramid alloc failed\n");
+            free(level1); free(level2);
+            goto skip_dof;
+        }
+
+        // Level 1
+        // 2x2 box downsample from original framebuffer
+        for (int y = 0; y < hh; y++) {
+            for (int x = 0; x < hw; x++) {
+                int sx0 = x * 2, sx1 = x * 2 + 1;
+                int sy0 = y * 2, sy1 = y * 2 + 1;
+                if (sx1 >= w) sx1 = w - 1;
+                if (sy1 >= h) sy1 = h - 1;
+
+                int r = 0, g = 0, b = 0, cnt = 0;
+                for (int sy = sy0; sy <= sy1; sy++) {
+                    Pixel *src = fb + sy * w;
+                    for (int sx = sx0; sx <= sx1; sx++) {
+                        r += src[sx].r; g += src[sx].g; b += src[sx].b;
+                        cnt++;
+                    }
+                }
+                level1[y * hw + x].r = r / cnt;
+                level1[y * hw + x].g = g / cnt;
+                level1[y * hw + x].b = b / cnt;
+            }
+        }
+        // Gentle Gaussian blur on half‑res
+        gauss_blur(level1, level1, hw, hh, 1, 0.8f);
+
+        // Level 2 
+        for (int y = 0; y < qh; y++) {
+            for (int x = 0; x < qw; x++) {
+                int sx0 = x * 2, sx1 = x * 2 + 1;
+                int sy0 = y * 2, sy1 = y * 2 + 1;
+                if (sx1 >= hw) sx1 = hw - 1;
+                if (sy1 >= hh) sy1 = hh - 1;
+
+                int r = 0, g = 0, b = 0, cnt = 0;
+                for (int sy = sy0; sy <= sy1; sy++) {
+                    Pixel *src = level1 + sy * hw;
+                    for (int sx = sx0; sx <= sx1; sx++) {
+                        r += src[sx].r; g += src[sx].g; b += src[sx].b;
+                        cnt++;
+                    }
+                }
+                level2[y * qw + x].r = r / cnt;
+                level2[y * qw + x].g = g / cnt;
+                level2[y * qw + x].b = b / cnt;
+            }
+        }
+        // Gaussian blur on quarter‑res
+        gauss_blur(level2, level2, qw, qh, 1, 0.8f);
+
+        // DOF composite
+        for (int y = 0; y < h; y++) {
+            Pixel *out_row = fb + y * w;
+            for (int x = 0; x < w; x++) {
+                float z = zbuffer[y * w + x];
+                if (z >= FAR_DEPTH) continue;   // sky stays sharp (original colour untouched)
+
+                float coc = fabsf(z - focal_depth) * aperture;
+                // Map CoC to a level index (0..2)
+                float level = (coc / max_blur_radius);
+                if (level > 1.0f) level = 1.0f;  // clamp
+                level *= 2.0f;                   // map to 0..2
+                int level_low = (int)level;
+                int level_high = level_low + 1;
+                if (level_high > 2) level_high = 2;
+                float t = level - level_low;
+
+                float u = (x + 0.5f) / w;
+                float v = (y + 0.5f) / h;
+
+                // Sample from the two appropriate pyramid levels
+                Pixel p_low, p_high;
+                if (level_low == 0)      p_low  = fb[y * w + x];   // original sharp
+                else if (level_low == 1) p_low  = sample_bilinear(level1, hw, hh, u, v);
+                else                     p_low  = sample_bilinear(level2, qw, qh, u, v);
+
+                if (level_high == 0)      p_high = fb[y * w + x];
+                else if (level_high == 1) p_high = sample_bilinear(level1, hw, hh, u, v);
+                else                      p_high = sample_bilinear(level2, qw, qh, u, v);
+
+                // Linear blend
+                out_row[x].r = (unsigned char)(p_low.r * (1.0f - t) + p_high.r * t + 0.5f);
+                out_row[x].g = (unsigned char)(p_low.g * (1.0f - t) + p_high.g * t + 0.5f);
+                out_row[x].b = (unsigned char)(p_low.b * (1.0f - t) + p_high.b * t + 0.5f);
+            }
+        }
+
+        free(level1);
+        free(level2);
+        skip_dof: ;
+    }
+
+
+    if(use_bloom) {
+        int w = render_width, h = render_height;
+        int hw = w / 2, hh = h / 2;
+
+        // Allocate half‑res buffer for bright areas
+        Pixel *bloom_low = malloc((size_t)hw * hh * sizeof(Pixel));
+        if(!bloom_low) {
+            fprintf(stderr, "Bloom alloc failed\n");
+            goto skip_bloom;
+        }
+
+        // downsample
+        for(int y = 0; y < hh; y++) {
+            Pixel *dst = bloom_low + y * hw;
+            for(int x = 0; x < hw; x++) {
+                int sx0 = x*2, sx1 = x*2+1;
+                int sy0 = y*2, sy1 = y*2+1;
+                if(sx1 >= w) sx1 = w-1;
+                if(sy1 >= h) sy1 = h-1;
+
+                int r=0, g=0, b=0, cnt=0;
+                for(int sy=sy0; sy<=sy1; sy++) {
+                    Pixel *src = fb + sy * w;
+                    for(int sx=sx0; sx<=sx1; sx++) {
+                        r += src[sx].r; g += src[sx].g; b += src[sx].b;
+                        cnt++;
+                    }
+                }
+                unsigned char avg_r = r/cnt, avg_g = g/cnt, avg_b = b/cnt;
+                float brightness = (avg_r + avg_g + avg_b) / (255.0f * 3.0f);
+                if(brightness > bloom_threshold) {
+                    float scale = (brightness - bloom_threshold) / (1.0f - bloom_threshold);
+                    dst[x].r = (unsigned char)(avg_r * scale);
+                    dst[x].g = (unsigned char)(avg_g * scale);
+                    dst[x].b = (unsigned char)(avg_b * scale);
+                } else {
+                    dst[x].r = dst[x].g = dst[x].b = 0;
+                }
+            }
+        }
+
+        // Gaussian blur
+        gauss_blur(bloom_low, bloom_low, hw, hh, 2, 1.2f);
+
+        // Upsample and add to original framebuffer
+        for(int y = 0; y < h; y++) {
+            Pixel *row = fb + y * w;
+            for(int x = 0; x < w; x++) {
+                int lx = x/2, ly = y/2;
+                if(lx >= hw) lx = hw-1;
+                if(ly >= hh) ly = hh-1;
+                Pixel *b = &bloom_low[ly * hw + lx];
+                int r = row[x].r + (int)(b->r * bloom_intensity);
+                int g = row[x].g + (int)(b->g * bloom_intensity);
+                int bv = row[x].b + (int)(b->b * bloom_intensity);
+                row[x].r = r > 255 ? 255 : (unsigned char)r;
+                row[x].g = g > 255 ? 255 : (unsigned char)g;
+                row[x].b = bv > 255 ? 255 : (unsigned char)bv;
+            }
+        }
+
+        free(bloom_low);
+        skip_bloom: ;
     }
 
     if(use_png) {
