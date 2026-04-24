@@ -12,7 +12,10 @@ float *zbuffer = NULL;
 int render_width  = 3840;
 int render_height = 2160;
 
-float shadow_map[SHADOW_H][SHADOW_W];
+int shadow_w = 1024;
+int shadow_h = 1024;
+float *shadow_map = NULL;
+
 Mat4 light_vp_global;
 static float global_cos_table[MAX_TUBE_SIDES];
 static float global_sin_table[MAX_TUBE_SIDES];
@@ -48,26 +51,33 @@ void renderer_init(int width, int height){
             zrow[x] = FAR_DEPTH;
         }
     }
-
-    for(int y = 0; y < SHADOW_H; y++){
-        for(int x = 0; x < SHADOW_W; x++){
-            shadow_map[y][x] = FAR_DEPTH;
-        }
-    }
 }
 
 void shadow_map_init(){
-    for(int y = 0; y < SHADOW_H; y++){
-        for(int x = 0; x < SHADOW_W; x++){
-            shadow_map[y][x] = FAR_DEPTH;
+    for(int y = 0; y < shadow_h; y++){
+        for(int x = 0; x < shadow_w; x++){
+            shadow_map[y * shadow_w + x] = FAR_DEPTH;
         }
     }
 }
 
+void shadow_init(int w, int h) {
+    shadow_w = w;
+    shadow_h = h;
+    free(shadow_map);
+    shadow_map = malloc((size_t)shadow_w * shadow_h * sizeof(float));
+    if (!shadow_map) {
+        fprintf(stderr, "Failed to allocate shadow map\n");
+        exit(1);
+    }
+    shadow_map_init();   // now it knows about it
+}
+
 void shadow_map_write(int x, int y, float depth){
-    if(x >= 0 && x < SHADOW_W && y >= 0 && y < SHADOW_H){
-        if(depth < shadow_map[y][x])
-            shadow_map[y][x] = depth;
+    if(x >= 0 && x < shadow_w && y >= 0 && y < shadow_h){
+        float *p = &shadow_map[y * shadow_w + x];
+        if(depth < *p)
+            *p = depth;
     }
 }
 
@@ -117,10 +127,10 @@ void render_tube_shadow_local(
             float iw=1.0f/clip.w;
             float nx=clip.x*iw, ny=clip.y*iw, nz=clip.z*iw;
             if(nx<-1||nx>1||ny<-1||ny>1) continue;
-            int sx=(int)((nx+1.0f)*0.5f*SHADOW_W);
-            int sy=(int)((1.0f-ny)*0.5f*SHADOW_H);
-            if(sx<0||sx>=SHADOW_W||sy<0||sy>=SHADOW_H) continue;
-            int idx = sy*SHADOW_W+sx;
+            int sx=(int)((nx+1.0f)*0.5f*shadow_w);
+            int sy=(int)((1.0f-ny)*0.5f*shadow_h);
+            if(sx<0||sx>=shadow_w||sy<0||sy>=shadow_h) continue;
+            int idx = sy*shadow_w+sx;
             if(nz < shadow_local[idx])
                 shadow_local[idx] = nz;
         }
@@ -156,7 +166,6 @@ void drawTriangleGouraudShadow(
 
     int dy02 = y2 - y0;
     if(dy02 == 0) return;
-
     float inv_y02 = 1.0f / dy02;
 
     for(int y = y0; y <= y2; y++){
@@ -229,7 +238,6 @@ void drawTriangleGouraudShadow(
 
             float intensity = ia + t*(ib - ia);
             if(intensity <= 0.05f) continue;
-
             if(intensity > 1.0f) intensity = 1.0f;
 
             if(intensity > 0.35f){
@@ -238,14 +246,11 @@ void drawTriangleGouraudShadow(
                     la.y + t*(lb.y - la.y),
                     la.z + t*(lb.z - la.z)
                 };
-
                 if(lc.x >= 0.0f && lc.x <= 1.0f &&
                    lc.y >= 0.0f && lc.y <= 1.0f){
-
-                    int lxi = (int)(lc.x * (SHADOW_W - 1));
-                    int lyi = (int)(lc.y * (SHADOW_H - 1));
-
-                    if(lc.z > shadow_map[lyi][lxi] + 0.001f)
+                    int lxi = (int)(lc.x * (shadow_w - 1));
+                    int lyi = (int)(lc.y * (shadow_h - 1));
+                    if(lc.z > shadow_map[lyi * shadow_w + lxi] + 0.001f)
                         intensity *= 0.25f;
                 }
             }
@@ -286,8 +291,8 @@ void render_tube_shadow(BezierCubic b, Mat4 light_mvp, int segments, int sides, 
             float iw=1.0f/clip.w;
             float ndcx=clip.x*iw, ndcy=clip.y*iw, ndcz=clip.z*iw;
             if(ndcx<-1||ndcx>1||ndcy<-1||ndcy>1) continue;
-            int sx=(int)((ndcx+1.0f)*0.5f*SHADOW_W);
-            int sy=(int)((1.0f-ndcy)*0.5f*SHADOW_H);
+            int sx=(int)((ndcx+1.0f)*0.5f*shadow_w);
+            int sy=(int)((1.0f-ndcy)*0.5f*shadow_h);
             shadow_map_write(sx,sy,ndcz);
         }
     }
@@ -299,21 +304,10 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
 {
     Vec3 mid = bezier_eval(b, 0.5f);
     float dist2 = mid.x*mid.x + mid.y*mid.y + (mid.z + 100.0f)*(mid.z + 100.0f);
-    if(dist2 > 2000.0f*2000.0f){
-        return;
-    }
-    else if(dist2 > 800.0f*800.0f){
-        segments = 3;
-        sides = 3;
-    }
-    else if(dist2 > 400.0f*400.0f){
-        segments = 4;
-        sides = 4;
-    }
-    else if(dist2 > 200.0f*200.0f){
-        segments = 6;
-        sides = 6;
-    }
+    if(dist2 > 2000.0f*2000.0f) return;
+    else if(dist2 > 800.0f*800.0f){ segments = 3; sides = 3; }
+    else if(dist2 > 400.0f*400.0f){ segments = 4; sides = 4; }
+    else if(dist2 > 200.0f*200.0f){ segments = 6; sides = 6; }
 
     if(segments < 2) segments = 2;
     if(sides < 3) sides = 3;
@@ -325,9 +319,8 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
     for(int i = 0; i <= segments; i++){
         tb->ring_ring_valid[i] = 0;
         int base = i * MAX_TUBE_SIDES;
-        for(int j = 0; j < sides; j++){
+        for(int j = 0; j < sides; j++)
             tb->ring_valid[base + j] = 0;
-        }
     }
 
     light = normalize(light);
@@ -349,7 +342,6 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
 
         for(int j = 0; j < sides; j++){
             int idx = base + j;
-
             float ca = global_cos_table[j * step];
             float sa = global_sin_table[j * step];
 
@@ -363,7 +355,6 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
             if(fabsf(clip.w) < 1e-6f) continue;
 
             float iw = 1.0f / clip.w;
-
             tb->ring_x[idx] = (int)((clip.x*iw + 1.0f) * 0.5f * render_width);
             tb->ring_y[idx] = (int)((1.0f - clip.y*iw) * 0.5f * render_height);
             tb->ring_z[idx] = clip.z * iw;
@@ -400,11 +391,7 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
 
         for(int j = 0; j < sides; j++){
             int next = (j+1) % sides;
-
-            int a = b0 + j;
-            int b = b0 + next;
-            int c = b1 + j;
-            int d = b1 + next;
+            int a = b0 + j, b = b0 + next, c = b1 + j, d = b1 + next;
 
             float amb = 0.2f;
             float ia = amb + (1.0f-amb)*fmaxf(0, dot(tb->ring_n[a], light));
@@ -436,52 +423,22 @@ void render_tube(BezierCubic b, Mat4 mvp, int segments, int sides,
 }
 
 void extract_frustum_planes(Plane planes[6], Mat4 m, Vec3 refPos){
-    // Left: row3 + row0
-    planes[0].a = m.m[3][0] + m.m[0][0];
-    planes[0].b = m.m[3][1] + m.m[0][1];
-    planes[0].c = m.m[3][2] + m.m[0][2];
-    planes[0].d = m.m[3][3] + m.m[0][3];
-    // Right: row3 - row0
-    planes[1].a = m.m[3][0] - m.m[0][0];
-    planes[1].b = m.m[3][1] - m.m[0][1];
-    planes[1].c = m.m[3][2] - m.m[0][2];
-    planes[1].d = m.m[3][3] - m.m[0][3];
-    // Bottom: row3 + row1
-    planes[2].a = m.m[3][0] + m.m[1][0];
-    planes[2].b = m.m[3][1] + m.m[1][1];
-    planes[2].c = m.m[3][2] + m.m[1][2];
-    planes[2].d = m.m[3][3] + m.m[1][3];
-    // Top: row3 - row1
-    planes[3].a = m.m[3][0] - m.m[1][0];
-    planes[3].b = m.m[3][1] - m.m[1][1];
-    planes[3].c = m.m[3][2] - m.m[1][2];
-    planes[3].d = m.m[3][3] - m.m[1][3];
-    // Near: row2 (for 0-to-1 depth)
-    planes[4].a = m.m[2][0];
-    planes[4].b = m.m[2][1];
-    planes[4].c = m.m[2][2];
-    planes[4].d = m.m[2][3];
-    // Far: row3 - row2
-    planes[5].a = m.m[3][0] - m.m[2][0];
-    planes[5].b = m.m[3][1] - m.m[2][1];
-    planes[5].c = m.m[3][2] - m.m[2][2];
-    planes[5].d = m.m[3][3] - m.m[2][3];
+    planes[0]=(Plane){m.m[3][0]+m.m[0][0],m.m[3][1]+m.m[0][1],m.m[3][2]+m.m[0][2],m.m[3][3]+m.m[0][3]};
+    planes[1]=(Plane){m.m[3][0]-m.m[0][0],m.m[3][1]-m.m[0][1],m.m[3][2]-m.m[0][2],m.m[3][3]-m.m[0][3]};
+    planes[2]=(Plane){m.m[3][0]+m.m[1][0],m.m[3][1]+m.m[1][1],m.m[3][2]+m.m[1][2],m.m[3][3]+m.m[1][3]};
+    planes[3]=(Plane){m.m[3][0]-m.m[1][0],m.m[3][1]-m.m[1][1],m.m[3][2]-m.m[1][2],m.m[3][3]-m.m[1][3]};
+    planes[4]=(Plane){m.m[2][0],m.m[2][1],m.m[2][2],m.m[2][3]};
+    planes[5]=(Plane){m.m[3][0]-m.m[2][0],m.m[3][1]-m.m[2][1],m.m[3][2]-m.m[2][2],m.m[3][3]-m.m[2][3]};
 
     for(int i=0;i<6;i++){
-        float len = sqrtf(planes[i].a*planes[i].a + planes[i].b*planes[i].b + planes[i].c*planes[i].c);
-        if(len > 0.0001f){
-            planes[i].a /= len;
-            planes[i].b /= len;
-            planes[i].c /= len;
-            planes[i].d /= len;
+        float len=sqrtf(planes[i].a*planes[i].a+planes[i].b*planes[i].b+planes[i].c*planes[i].c);
+        if(len>0.0001f){
+            planes[i].a/=len; planes[i].b/=len; planes[i].c/=len; planes[i].d/=len;
         }
-        // Ensure the reference point (camera/light) is inside the frustum
         float d = planes[i].a*refPos.x + planes[i].b*refPos.y + planes[i].c*refPos.z + planes[i].d;
         if(d < 0.0f){
-            planes[i].a = -planes[i].a;
-            planes[i].b = -planes[i].b;
-            planes[i].c = -planes[i].c;
-            planes[i].d = -planes[i].d;
+            planes[i].a = -planes[i].a; planes[i].b = -planes[i].b;
+            planes[i].c = -planes[i].c; planes[i].d = -planes[i].d;
         }
     }
 }
@@ -489,6 +446,8 @@ void extract_frustum_planes(Plane planes[6], Mat4 m, Vec3 refPos){
 void renderer_cleanup(void) {
     free(framebuffer);
     free(zbuffer);
+    free(shadow_map);
     framebuffer = NULL;
     zbuffer = NULL;
+    shadow_map = NULL;
 }

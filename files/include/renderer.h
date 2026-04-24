@@ -4,6 +4,7 @@
 
 void renderer_init(int width, int height);
 void draw_pixel(int x, int y, float depth, unsigned char r, unsigned char g, unsigned char b);
+void shadow_init(int width, int height);
 void draw_line(int x0, int y0, int x1, int y1);
 void drawTriangleFilled(int x0, int y0, int x1, int y1, int x2, int y2, float depth, int r, int g, int b);
 void render_bezier(BezierCubic b, Mat4 mvp, int segments);
@@ -34,7 +35,7 @@ void render_tube_shadow_local(
     float radius,
     float *shadow_local);
 static inline void shadow_map_write_local(
-    float map[SHADOW_H][SHADOW_W],
+    float map[shadow_h][shadow_w],
     int x, int y, float depth);
 void renderer_cleanup(void);
 #endif

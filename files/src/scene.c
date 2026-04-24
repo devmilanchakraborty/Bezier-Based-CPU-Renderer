@@ -24,7 +24,7 @@ static double timespec_to_ms(const struct timespec *t){
 static void *shadow_thread_func(void *arg){
     ShadowJob *job = (ShadowJob *)arg;
 
-    int total = SHADOW_H * SHADOW_W;
+    int total = shadow_h * shadow_w;
     for(int i=0; i<total; i++) job->shadow_local[i] = FAR_DEPTH;
 
     for(int i = job->start; i < job->end; i++){
@@ -138,12 +138,12 @@ static void shadow_pass(SceneConfig *scene, Plane light_planes[6]){
         jobs[t].translate_step = scene->transform.translate_step;
         memcpy(jobs[t].planes, light_planes, sizeof(Plane)*6);
 
-        jobs[t].shadow_local = malloc(SHADOW_H * SHADOW_W * sizeof(float));
+        jobs[t].shadow_local = malloc(shadow_h * shadow_w * sizeof(float));
         if(!jobs[t].shadow_local){
             fprintf(stderr, "shadow malloc failed thread %d\n", t);
             return;
         }
-        int total = SHADOW_H*SHADOW_W;
+        int total = shadow_h*shadow_w;
         for(int i=0; i<total; i++) jobs[t].shadow_local[i] = FAR_DEPTH;
 
         pthread_create(&threads[t], NULL, shadow_thread_func, &jobs[t]);
@@ -153,14 +153,14 @@ static void shadow_pass(SceneConfig *scene, Plane light_planes[6]){
         pthread_join(threads[t], NULL);
 
     // merge into global shadow_map
-    for(int y=0; y<SHADOW_H; y++){
-        for(int x=0; x<SHADOW_W; x++){
+    for(int y=0; y<shadow_h; y++){
+        for(int x=0; x<shadow_w; x++){
             float min = FAR_DEPTH;
-            int idx = y*SHADOW_W+x;
+            int idx = y*shadow_w+x;
             for(int t=0; t<NUM_THREADS; t++)
                 if(jobs[t].shadow_local[idx] < min)
                     min = jobs[t].shadow_local[idx];
-            shadow_map[y][x] = min;
+            shadow_map[y * shadow_w + x] = min;
         }
     }
 

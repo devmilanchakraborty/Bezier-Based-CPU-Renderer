@@ -10,7 +10,24 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../include/stb_image_write.h"
+int shadow_w_arg = 1024;
+int shadow_h_arg = 1024;
 
+extern float *zbuffer;   // so we can read depth for fog
+
+// Background
+static int   use_bg = 0;
+static int   bg_r = 0, bg_g = 0, bg_b = 0;
+
+// Fog
+static int   use_fog = 0;
+static float fog_density = 0.15f;        // 0.05 = subtle, 0.3 = very hazy
+static int   fog_r = 180, fog_g = 200, fog_b = 255;   // light atmospheric blue
+ // default grey
+
+// Vignette
+static int   use_vignette = 0;
+static float vignette_strength = 0.4f;
 static Vec3 parse_vec3(const char *str){
     Vec3 v = {0};
     sscanf(str, "%f,%f,%f", &v.x, &v.y, &v.z);
@@ -54,11 +71,18 @@ static void print_usage(const char *prog){
     printf("  -oh   <int>    pixel height of output (default 1080)\n");
     printf("  -iw   <int>    internal render width (default 3840)\n");
     printf("  -ih   <int>    internal render height (default 2160)\n");
+    printf("  -sw   <int>    shadow map width (default 1024)\n");
+    printf("  -sh   <int>    shadow map height (default 1024)\n");
     printf("  -rgb  <flag>   enable rainbow coloring\n");
-    printf("  -cycles <float>  rainbow cycles across all tubes (use with -rgb)(default 1.0)\n");
+    printf("  -cycles <float> rainbow cycles across all tubes (use with -rgb)(default 1.0)\n");
     printf("  -color r,g,b   set solid color (0-255)\n");
     printf("  -png  <flag>   output as PNG instead of PPM\n");
     printf("  -aces <flag>   apply ACES filmic tone mapping\n");
+    printf("  -bg    <r,g,b> background color for untouched pixels\n");
+    printf("  -fog           enable exponential depth cue\n");
+    printf("  -fog           enable exponential depth fog\n");
+    printf("  -fogdensity <float> fog density (default 0.15, range 0.01–1.0)\n");
+    printf("  -vignette [str]  enable vignette with optional strength (default 0.4)\n");
     printf("  -o    <string> output file (default output.ppm)\n");
 
 }
@@ -148,11 +172,18 @@ int main(int argc, char **argv){
         else if(!strcmp(argv[i], "-oh") && i+1<argc) out_h         = atoi(argv[++i]);
         else if(!strcmp(argv[i], "-iw") && i+1<argc) internal_w    = atoi(argv[++i]);
         else if(!strcmp(argv[i], "-ih") && i+1<argc) internal_h    = atoi(argv[++i]);
+        else if(!strcmp(argv[i], "-sw") && i+1<argc) shadow_w_arg = atoi(argv[++i]);
+        else if(!strcmp(argv[i], "-sh") && i+1<argc) shadow_h_arg = atoi(argv[++i]);
         else if(!strcmp(argv[i], "-rgb")){use_rgb                  = 1;}
         else if(!strcmp(argv[i], "-color") && i+1<argc){sscanf(argv[++i], "%d,%d,%d", &custom_r, &custom_g, &custom_b);use_custom_color = 1;}
         else if(!strcmp(argv[i], "-png")){use_png                  = 1;}
         else if(!strcmp(argv[i], "-aces")) { use_aces = 1; }
         else if(!strcmp(argv[i], "-cycles") && i+1<argc) rainbow_cycles = atof(argv[++i]);
+        else if(!strcmp(argv[i], "-bg") && i+1<argc){ sscanf(argv[++i], "%d,%d,%d", &bg_r, &bg_g, &bg_b); use_bg = 1;}
+        else if(!strcmp(argv[i], "-fogcolor") && i+1<argc){ sscanf(argv[++i], "%d,%d,%d", &fog_r, &fog_g, &fog_b); use_fog = 1; }
+        else if(!strcmp(argv[i], "-fog")) { use_fog = 1; }
+        else if(!strcmp(argv[i], "-fogdensity") && i+1<argc) fog_density = atof(argv[++i]);
+        else if(!strcmp(argv[i], "-vignette")){ use_vignette = 1;if(i+1<argc && argv[i+1][0]!='-') vignette_strength = atof(argv[++i]);}
         else { printf("unknown arg: %s\n", argv[i]); print_usage(argv[0]); return 1; }
     }
 
@@ -286,11 +317,44 @@ int main(int argc, char **argv){
     extern Mat4 light_vp_global;
     light_vp_global  = scene.light_vp;
 
-    shadow_map_init();
+    shadow_init(shadow_w_arg, shadow_h_arg);
     render_scene(scene);
 
     /* output downsampling using get_framebuffer() */
     Pixel *fb = get_framebuffer();
+    if(use_bg) {
+        for(int y = 0; y < render_height; y++) {
+            Pixel *row = fb + y * render_width;
+            for(int x = 0; x < render_width; x++) {
+                if(zbuffer[y * render_width + x] == FAR_DEPTH) {   // untouched pixel
+                    row[x].r = bg_r;
+                    row[x].g = bg_g;
+                    row[x].b = bg_b;
+                }
+            }
+        }
+    }
+    //fog
+    if(use_fog) {
+        float density = fog_density;
+        for(int y = 0; y < render_height; y++) {
+            Pixel *row = fb + y * render_width;
+            float *zrow = zbuffer + y * render_width;
+            for(int x = 0; x < render_width; x++) {
+                float depth = zrow[x];
+                if(depth >= FAR_DEPTH) continue;   // sky pixels – fog doesn't affect them
+
+                // Exponential fog factor: 0 = clear, 1 = fully fogged
+                float fog_factor = 1.0f - expf(-depth * density);
+                // Optional: if you want a minimum visibility
+                // fog_factor = fminf(fog_factor, 0.9f);
+
+                row[x].r = (unsigned char)(row[x].r * (1.0f - fog_factor) + fog_r * fog_factor);
+                row[x].g = (unsigned char)(row[x].g * (1.0f - fog_factor) + fog_g * fog_factor);
+                row[x].b = (unsigned char)(row[x].b * (1.0f - fog_factor) + fog_b * fog_factor);
+            }
+        }
+    }
 
     // ACES tone mapping
     if(use_aces) {
@@ -314,6 +378,26 @@ int main(int argc, char **argv){
                 row[x].r = (unsigned char)(r * 255.0f);
                 row[x].g = (unsigned char)(g * 255.0f);
                 row[x].b = (unsigned char)(b * 255.0f);
+            }
+        }
+    }
+
+
+    //vingette
+    if(use_vignette) {
+        float cx = render_width * 0.5f;
+        float cy = render_height * 0.5f;
+        for(int y = 0; y < render_height; y++) {
+            Pixel *row = fb + y * render_width;
+            float dy = (y - cy) / cy;   // -1 … 1
+            for(int x = 0; x < render_width; x++) {
+                float dx = (x - cx) / cx;
+                float d2 = dx*dx + dy*dy;
+                float factor = 1.0f - vignette_strength * d2;
+                if(factor < 0.0f) factor = 0.0f;
+                row[x].r = (unsigned char)(row[x].r * factor);
+                row[x].g = (unsigned char)(row[x].g * factor);
+                row[x].b = (unsigned char)(row[x].b * factor);
             }
         }
     }

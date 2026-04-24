@@ -11,12 +11,14 @@
 // Default internal rendering resolution – can be changed via CLI
 extern int render_width;
 extern int render_height;
+extern int shadow_w;
+extern int shadow_h;
 
 #define OUT_WIDTH 1920
 #define OUT_HEIGHT 1080
 
-#define SHADOW_W 1024
-#define SHADOW_H 1024
+//#define SHADOW_W 1024
+//#define SHADOW_H 1024
 #define NUM_THREADS 8
 #define FAR_DEPTH 1e30f
 
@@ -121,7 +123,7 @@ typedef struct {
 } Plane;
 
 // shadow_map is still static, but if you want it dynamic later, same pattern
-float shadow_map[SHADOW_H][SHADOW_W];
+extern float *shadow_map;
 
 typedef struct {
     float x, y, z; // already normalized to [0,1] for x,y
