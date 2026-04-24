@@ -9,7 +9,60 @@ A professional-grade, high-performance 3D software rendering engine written in C
 
 <img src="./Images/art.png" width="1000">
 <img src="./Images/cinematic_final.png" width="1000">
+
+#### Command:
+
+```bash
+./renderer \
+  -t 800000 \
+  -seg 80 -sid 60 \
+  -r 0.04 \
+  -scale 1.8 \
+  -ry 1.3 -rz 0.7 -rx 0.15 \
+  -as 0.0025 \
+  -cz -100 -cy 1.5 \
+  -fov 95 \
+  -focus 0,-2,-10 \
+  -lx 12 -ly 8 -lz -22 \
+  -bg 240,240,240 \
+  -fog -fogcolor 60,80,140 -fogdensity 0.15 \
+  -vignette 0.25 \
+  -aces \
+  -sw 1920 -sh 1080 \
+  -iw 3840 -ih 2160 \
+  -ow 1920 -oh 1080 \
+  -png \
+  -o cinematic_final.png
+```
 <img src="./Images/ultimate_test.png" width="1000">
+
+#### Command:
+
+```bash
+./renderer \
+  -t 2000000 \
+  -seg 150 -sid 250 \
+  -r 0.04 \
+  -scale 1.8 \
+  -ry 1.3 -rz 0.7 -rx 0.15 \
+  -as 0.0025 \
+  -cz -75 -cy 1 \
+  -fov 150.0f \
+  -focus 0,-2,-10 \
+  -lx 12 -ly 8 -lz -22 \
+  -bg 250,250,180 -color 255,10,10 \
+  -fog -fogcolor 70,90,150 -fogdensity 0.12 \
+  -vignette 0.45 \
+  -aces \
+  -dof -focal 0.4 -aperture 3.5 \
+  -bloom -bloomthreshold 0.65 -bloomintensity 0.35 \
+  -sw 4096 -sh 4096 \
+  -threads 8 \
+  -iw 3840 -ih 2160 \
+  -ow 1920 -oh 1080 \
+  -png \
+  -o ultimate_test.png
+```
 <img src="./Images/helix5mil.png" width="1000">
 <img src="./Images/blue.png" width="1000">
 
