@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h> 
 #include "../include/types.h"
 #include "../include/math_utils.h"
 #include "../include/geometry.h"
@@ -31,9 +32,8 @@ static float bloom_intensity = 0.4f;   // how strong the glow is
 
 // Fog
 static int   use_fog = 0;
-static float fog_density = 0.15f;        // 0.05 = subtle, 0.3 = very hazy
+static float fog_density = 0.15f;        
 static int   fog_r = 180, fog_g = 200, fog_b = 255;   // light atmospheric blue
- // default grey
 
 // Vignette
 static int   use_vignette = 0;
@@ -157,7 +157,7 @@ static void print_usage(const char *prog){
     printf("  -ih   <int>    internal render height (default 2160)\n");
     printf("  -sw   <int>    shadow map width (default 1024)\n");
     printf("  -sh   <int>    shadow map height (default 1024)\n");
-    printf("  -threads <int>   number of rendering threads (default 8)\n");
+    printf("  -threads <int>   number of rendering threads (auto)\n");
     printf("  -rgb  <flag>   enable rainbow coloring\n");
     printf("  -cycles <float> rainbow cycles across all tubes (use with -rgb)(default 1.0)\n");
     printf("  -color r,g,b   set solid color (0-255)\n");
@@ -221,7 +221,7 @@ int main(int argc, char **argv){
     int   use_png = 0;
     int use_aces = 0;
     float rainbow_cycles = 1.0f;
-    int num_threads_arg = 8;
+    int num_threads_arg = 0; //auto
 
     /* parse args */
     for(int i = 1; i < argc; i++){
@@ -418,8 +418,15 @@ int main(int argc, char **argv){
 
     shadow_init(shadow_w_arg, shadow_h_arg);
     extern int num_threads;
+
+    /* auto detect thread count if not provided */
+    if (num_threads_arg <= 0) {
+        long cores = sysconf(_SC_NPROCESSORS_ONLN);
+        num_threads_arg = (cores > 1) ? (int)cores - 1 : 1;   //leave one core free
+        if (num_threads_arg > 64) num_threads_arg = 64;
+    }
     num_threads = num_threads_arg;
-    if (num_threads < 1) num_threads = 1; 
+
     render_scene(scene);
 
     /* output downsampling using get_framebuffer() */
