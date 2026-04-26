@@ -11,5 +11,6 @@ renderer
 
 # VS Code settings
 .vscode/
+#Clion
 .idea/
 qodana.yaml

@@ -300,6 +300,11 @@ int main(int argc, char **argv){
     printf("tubes=%d seg=%d sid=%d scale=%.2f ry=%.2f rz=%.2f step=%.4f\n",
            num_tubes, segments, sides, scale, ry, rz, angle_step);
 
+    if (internal_w * out_h != internal_h * out_w) {
+        printf("Warning: mismatched aspect ratios\n");
+        return 1;
+    }
+
 
     if(use_png) {
         // If user hasn't overridden the default name, use .png
