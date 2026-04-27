@@ -207,3 +207,56 @@ AABB bezier_bounds(BezierCubic b, float radius) {
 
     return box;
 }
+
+
+void bezier_split(BezierCubic b, BezierCubic *left, BezierCubic *right) {
+    Vec3 a = { (b.p0.x + b.p1.x) * 0.5f, (b.p0.y + b.p1.y) * 0.5f, (b.p0.z + b.p1.z) * 0.5f };
+    Vec3 c = { (b.p1.x + b.p2.x) * 0.5f, (b.p1.y + b.p2.y) * 0.5f, (b.p1.z + b.p2.z) * 0.5f };
+    Vec3 d = { (b.p2.x + b.p3.x) * 0.5f, (b.p2.y + b.p3.y) * 0.5f, (b.p2.z + b.p3.z) * 0.5f };
+    Vec3 e = { (a.x + c.x) * 0.5f, (a.y + c.y) * 0.5f, (a.z + c.z) * 0.5f };
+    Vec3 f = { (c.x + d.x) * 0.5f, (c.y + d.y) * 0.5f, (c.z + d.z) * 0.5f };
+    Vec3 m = { (e.x + f.x) * 0.5f, (e.y + f.y) * 0.5f, (e.z + f.z) * 0.5f };
+    *left  = (BezierCubic){ b.p0, a, e, m };
+    *right = (BezierCubic){ m, f, d, b.p3 };
+}
+
+AABB bezier_bounds_adaptive(BezierCubic b, float radius, AABB *segment_bounds, int *segment_count) {
+    BezierCubic stack[MAX_SEGMENTS];
+    int stack_top = 0;
+    stack[stack_top++] = b;
+
+    int seg = 0;
+    while (stack_top > 0 && seg < MAX_SEGMENTS) {
+        BezierCubic curve = stack[--stack_top];
+        if (is_curve_flat(curve) || seg == MAX_SEGMENTS - 1) {
+            segment_bounds[seg] = bezier_bounds(curve, radius);
+            seg++;
+        } else {
+            BezierCubic left, right;
+            bezier_split(curve, &left, &right);
+            if (stack_top + 2 <= MAX_SEGMENTS) {
+                stack[stack_top++] = right;
+                stack[stack_top++] = left;
+            } else {
+                segment_bounds[seg] = bezier_bounds(curve, radius);
+                seg++;
+            }
+        }
+    }
+    *segment_count = seg;
+
+    /* Compute union AABB */
+    AABB union_box = segment_bounds[0];
+    for (int s = 1; s < seg; s++) {
+        AABB *b = &segment_bounds[s];
+        if (b->min.x < union_box.min.x) union_box.min.x = b->min.x;
+        if (b->min.y < union_box.min.y) union_box.min.y = b->min.y;
+        if (b->min.z < union_box.min.z) union_box.min.z = b->min.z;
+        if (b->max.x > union_box.max.x) union_box.max.x = b->max.x;
+        if (b->max.y > union_box.max.y) union_box.max.y = b->max.y;
+        if (b->max.z > union_box.max.z) union_box.max.z = b->max.z;
+    }
+    return union_box;
+}
+
+

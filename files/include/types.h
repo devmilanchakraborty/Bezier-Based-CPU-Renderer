@@ -7,7 +7,7 @@
 #define MAX_TUBE_SEGMENTS 150
 #define MAX_TUBE_SIDES 250
 #define MAX_TUBE_VERTS ((MAX_TUBE_SEGMENTS + 1) * MAX_TUBE_SIDES)
-
+#define MAX_SEGMENTS 8
 
 extern int render_width;
 extern int render_height;
@@ -77,6 +77,8 @@ typedef struct {
     BezierCubic curve;
     TubeProperties tube_props;
     int color_r, color_g, color_b;
+    AABB segment_bounds[MAX_TUBE_SEGMENTS];
+    int segment_count;
 } TubeEntry;
 
 typedef struct {

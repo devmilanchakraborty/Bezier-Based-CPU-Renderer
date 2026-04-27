@@ -227,7 +227,8 @@ void render_scene(SceneConfig scene){
             {p0.x,p0.y,p0.z},{p1.x,p1.y,p1.z},
             {p2.x,p2.y,p2.z},{p3.x,p3.y,p3.z}
         };
-        te->bounds=bezier_bounds(te->world_curve, te->tube_props.radius);
+        te->bounds = bezier_bounds_adaptive(te->world_curve, te->tube_props.radius,
+                                    te->segment_bounds, &te->segment_count);
     }
     clock_gettime(CLOCK_MONOTONIC, &t1);
     printf("world transform: %.2f ms\n", timespec_to_ms(&t1)-timespec_to_ms(&t0));
